@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ProLocate</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+
+<style>
+:root {
+  --primary:#1a73e8;
+  --bg-gradient:linear-gradient(135deg,#3e487d,#1e2364,#0b0c32); /* dark blue gradient */
+  --card:#ffffff;
+  --text:#f1f1f1;
+  --muted:#cfd8dc;
+  --radius:18px;
+}
+
+*{box-sizing:border-box;transition:all .3s ease;}
+
+body {
+  margin:0;
+  font-family:"Segoe UI", Roboto, Arial, sans-serif;
+  background:var(--bg-gradient);
+  color:var(--text);
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  min-height:100vh;
+  padding:20px;
+}
+
+.app {
+  width:100%;
+  max-width:950px;
+  background:rgba(255,255,255,0.08);
+  border-radius:var(--radius);
+  box-shadow:0 8px 20px rgba(0,0,0,0.4);
+  backdrop-filter:blur(12px);
+  overflow:hidden;
+  animation:fadeIn 0.8s ease;
+}
+
+header {
+  padding:20px;
+  font-size:40px;
+  font-weight:700;
+  text-align:center;
+  background:rgba(255,255,255,0.05);
+  color:#8aef8e; /* soft green accent */
+  letter-spacing:1px;
+}
+
+.controls {
+  padding:20px 20px;
+  display:flex;
+  gap:14px;
+  flex-wrap:wrap;
+}
+
+.controls input {
+  flex:1;
+  padding:14px 18px;
+  font-size:16px;
+  border-radius:var(--radius);
+  border:none;
+  outline:none;
+  background:#f9f9f9;
+}
+
+.controls input:focus {
+  box-shadow:0 0 0 2px var(--primary);
+}
+
+.controls button {
+  padding:14px 24px;
+  font-size:15px;
+  background:var(--primary);
+  color:#fff;
+  border:none;
+  border-radius:var(--radius);
+  cursor:pointer;
+}
+
+.controls button:hover {
+  background:#1558b0;
+  transform:translateY(-2px);
+}
+
+.info {
+  padding:20px 24px;
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+  gap:16px;
+  font-size:14px;
+}
+
+.info div {
+  background:linear-gradient(135deg,#a5d6a7,#c8e6c9); /* light green gradient */
+  padding:16px;
+  border-radius:var(--radius);
+  text-align:center;
+  color:#151515;
+  font-weight:600;
+  box-shadow:0 4px 12px rgba(0,0,0,0.2);
+}
+
+.info b {
+  display:block;
+  font-weight:700;
+  margin-bottom:6px;
+}
+
+#map {
+  height:450px;
+  width:100%;
+  border-top:2px solid var(--primary);
+}
+
+@media(max-width:600px){
+  #map{height:320px}
+}
+
+@keyframes fadeIn {
+  from {opacity:0;transform:translateY(20px);}
+  to {opacity:1;transform:translateY(0);}
+}
+</style>
+</head>
+
+<body>
+
+<div class="app">
+
+<header>
+  ProLocate
+</header>
+
+<div class="controls">
+  <input id="locationInput" placeholder="ProSearch the Place">
+  <button onclick="findLocation()">Search</button>
+</div>
+
+<div class="info">
+  <div><b>Latitude</b><span id="lat">---</span></div>
+  <div><b>Longitude</b><span id="lon">---</span></div>
+  <div><b>Direction</b><span id="direction">---</span></div>
+  <div><b>Distance</b><span id="distance">---</span></div>
+</div>
+
+<div id="map"></div>
+
+</div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<script>
+let map=L.map("map").setView([20.5937,78.9629],5);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{
+  attribution:"© OpenStreetMap contributors"
+}).addTo(map);
+
+let destMarker,userMarker,routeLine;
+
+const toRad=d=>d*Math.PI/180;
+const toDeg=r=>r*180/Math.PI;
+
+function bearing(a,b,c,d){
+ let y=Math.sin(toRad(d-b))*Math.cos(toRad(c));
+ let x=Math.cos(toRad(a))*Math.sin(toRad(c))-Math.sin(toRad(a))*Math.cos(toRad(c))*Math.cos(toRad(d-b));
+ return (toDeg(Math.atan2(y,x))+360)%360;
+}
+function dist(a,b,c,d){
+ let R=6371;
+ let dLat=toRad(c-a),dLon=toRad(d-b);
+ let x=Math.sin(dLat/2)**2+Math.sin(dLon/2)**2*Math.cos(toRad(a))*Math.cos(toRad(c));
+ return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+}
+
+function findLocation(){
+ let q=document.getElementById("locationInput").value.trim();
+ if(!q)return alert("Enter a location");
+
+ if(q.includes(",")){
+   let p=q.split(",");
+   place(+p[0],+p[1],q);
+ }else{
+   fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`)
+   .then(r=>r.json())
+   .then(d=>{
+     if(!d.length)return alert("Not found");
+     place(+d[0].lat,+d[0].lon,d[0].display_name);
+   });
+ }
+}
+
+function place(lat,lon,name){
+ document.getElementById("lat").textContent=lat.toFixed(6);
+ document.getElementById("lon").textContent=lon.toFixed(6);
+
+ if(destMarker)map.removeLayer(destMarker);
+ destMarker=L.marker([lat,lon]).addTo(map).bindPopup(name).openPopup();
+ map.flyTo([lat,lon],13,{animate:true,duration:1.5});
+
+ navigator.geolocation.getCurrentPosition(p=>{
+   let ul=p.coords.latitude,uo=p.coords.longitude;
+
+   if(userMarker)map.removeLayer(userMarker);
+   userMarker=L.marker([ul,uo]).addTo(map).bindPopup("You");
+
+   document.getElementById("direction").textContent=bearing(ul,uo,lat,lon).toFixed(1)+"°";
+   document.getElementById("distance").textContent=dist(ul,uo,lat,lon).toFixed(2)+" km";
+
+   if(routeLine)map.removeLayer(routeLine);
+   routeLine=L.polyline([[ul,uo],[lat,lon]],{color:"#1a73e8",weight:3,dashArray:'6,8'}).addTo(map);
+   map.fitBounds([[ul,uo],[lat,lon]]);
+ });
+}
+</script>
+
+</body>
+</html>
